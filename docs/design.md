@@ -103,7 +103,7 @@ flowchart LR
 | 提权 | `no-new-privileges: true` | 中立进程禁止 suid |
 | capabilities | `cap_drop: ALL` | 纯网络中转无需任何 |
 | 端口 | `EXPOSE 8080` 且 compose 无 `ports:` | 不接宿主,外网不可达;只能经 docker network 访问 |
-| 网络 | `name: new-api_default` | 不存在 compose 自动创建(实验) |
+| 网络 | 默认纯自足;生产取消注释块即以 external 引用 `new-api_default` | 规避 compose v2 label 硬校验;down 永不触碰外部网络 |
 | 日志目录权限 | `bridge-init` 一次性容器 | 宿主侧零命令;幂等可重跑 |
 | tokenizer 资产 | embed 进二进制 | 无运行时外部依赖;不涉镜像外文件 |
 
@@ -137,8 +137,9 @@ L3 `docker compose up -d --build` + curl 冒烟套件。
 - **[D-26]** `message.output` 不带 prefix(API 端点严格于 bora/Playground)—— **生效**
 - **[D-27]** 空回观测标记 `empty_content: true`(access WARN),桥不做重试 —— **生效**
 - **[D-28]** 内置搜索 premium 优于普搜(4 维实测,含日期敏感度/结构化条目/幻觉)—— **生效**
-- **[D-29]** 网络自动创建语义(name: 而非 external:),down 不删外部创建 —— **生效**
+- **[D-29]** 网络自动创建语义(name: 而非 external:),down 不删外部创建 —— **部分勘误,见 D-31**
 - **[D-30]** 测试 max_tokens 预算拉满 32000/64000,防推理截断假 bug —— **生效**
+- **[D-31]** D-29 网络语义修正:compose v2 对同名已存网络做 label 硬校验直接拒启(v2.40.3 `resolveOrCreateNetwork` 源码实证,"自动复用"从未成立);compose ≥v5.4.0(2026-08)官方重构为按名复用仅 WARN。定案:compose.yaml 网络段整体注释(默认纯自足),生产接已建的 new-api_default 时成对取消注释、以 external 引用(桥上 name+auto-create 两种形态都放弃:v2 必炸、v5.4 才活,external 全版本安全);external 下 down 永不触碰该网络 —— **生效**
 
 ## 10. 相关索引
 

@@ -43,13 +43,13 @@ services:
     env_file:
       - path: .env
         required: false
-    networks:
-      - new-api_default
+    # 生产接入 new-api 共享网络:此处与文末 networks 段成对取消注释
+    # 每行只删行首一个 # 字符(不动其后空格),缩进即自动对齐
+    #networks:
+    #  - new-api_default
     restart: unless-stopped
 
+#生产接入 new-api 已创建的共享网络(须已存在):与 bridge 服务 networks 行成对删行首 # 即启用
 networks:
-  # 共享网络语义:若 new-api_default 已由 new-api 栈创建则直接复用;
-  # 若不存在则由本栈自动创建(name 固定,不随项目目录变);
-  # compose down 时不删除非本项目创建的网络(label 保护)。
   new-api_default:
-    name: new-api_default
+    external: true

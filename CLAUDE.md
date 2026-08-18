@@ -75,7 +75,7 @@ mistral-bridge/
 │   └── Mistral-GLM5.2-API协议研究报告.md  # 渠道协议档案(上游客观事实,勿涉桥实现)
 │
 ├── Dockerfile                        # 多阶段:golang:1.26-alpine → distroless nonroot
-└── compose.yaml                      # 零配置一键;init 容器 mkdir/chown logs;new-api_default 存在则复用
+└── compose.yaml                      # 零配置一键;init 容器 mkdir/chown logs;共享网络默认整块注释,生产取消注释以 external 接入 new-api_default
 ```
 
 ---

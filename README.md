@@ -32,7 +32,7 @@ docker compose up -d --build      # 零配置一键
 
 - 运行在 nonroot(65532) 用户、只读根 FS、`no-new-privileges`、`cap_drop ALL`、**不接宿主端口**
 - 日志落宿主机 `./logs`(bridge-init 一次性容器自动 mkdir/chown,宿主零命令)——`docker compose logs -f bridge` 实时观看
-- 加入网络 `new-api_default`,不存在本 compose 会自动创建;down 不删除外部创建的网络
+- 默认纯自足(项目私有网络);生产接入 new-api 共享网络 `new-api_default`:取消 compose.yaml 首尾两处注释即成(external 引用,规避 compose v2 label 硬校验;≥v5.4 无此限)
 - 容器内无外置依赖:tokenizer 资产 embed 进二进制(20MB),读写只在 `./logs` 与 `/tmp`
 
 ## 配置(全可选 env)
