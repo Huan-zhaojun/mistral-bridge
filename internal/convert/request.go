@@ -62,8 +62,15 @@ func builtinToolDef(t string) json.RawMessage {
 	return b
 }
 
+// Options 请求级转换配置(桥级 env 的投影,由 handler 从 config 注入)
+type Options struct {
+	BuiltinTools   []string // BUILTIN_TOOLS 生效集
+	PassReasoning  bool     // PASS_REASONING:历史 thinking 回传为 reasoning_content
+	MapCCWebSearch bool     // MAP_CC_WEBSEARCH:CC 的 WebSearch function → 服务端内置搜索
+}
+
 // ConvertRequest 主转换入口:OAI ChatRequest → upstream ConversationRequest body
-func ConvertRequest(req *oai.ChatRequest, cfgListen []string, passReasoning bool) (*ConvertedRequest, error) {
+func ConvertRequest(req *oai.ChatRequest, opts Options) (*ConvertedRequest, error) {
 	out := &ConvertedRequest{}
 
 	// ---- 1. 模型白名单(仅 glm-5-2,接受别名) ----
@@ -104,23 +111,33 @@ func ConvertRequest(req *oai.ChatRequest, cfgListen []string, passReasoning bool
 		out.Decisions = append(out.Decisions, "seed->random_seed")
 	}
 
-	// reasoning_effort:非 none 档一律映射 high(上游二值化)
-	if len(req.ReasoningEffort) > 0 && string(req.ReasoningEffort) != `""` {
+	// reasoning_effort 治理(glm-5-2 仅 high/none 两档,默认开思考):
+	// 缺省/auto → high;任何具体强度(minimal/low/medium/high/xhigh/max)→ high;
+	// 仅 "none" 直通(客户端显式关思考的唯一口子)
+	if len(req.ReasoningEffort) == 0 || string(req.ReasoningEffort) == `""` {
+		args.ReasoningEffort = "high"
+		out.ReasoningEffort = "high"
+		out.Decisions = append(out.Decisions, "reasoning_effort default->high")
+	} else {
 		var s string
 		if err := json.Unmarshal(req.ReasoningEffort, &s); err == nil && s != "" {
 			if s == "none" {
 				args.ReasoningEffort = "none"
 				out.ReasoningEffort = "none"
 			} else {
-				// minimal/low/medium/high/xhigh → high
 				args.ReasoningEffort = "high"
 				out.ReasoningEffort = "high"
-				if s != "high" {
+				if s == "auto" {
+					out.Decisions = append(out.Decisions, "reasoning_effort auto->high")
+				} else if s != "high" {
 					out.Decisions = append(out.Decisions, "reasoning_effort "+s+"->high")
 				}
 			}
 		} else if err == nil && s == "" {
-			// 空字符串视作未传
+			// 空字符串等同缺省:注入 high
+			args.ReasoningEffort = "high"
+			out.ReasoningEffort = "high"
+			out.Decisions = append(out.Decisions, "reasoning_effort default->high")
 		} else {
 			return nil, newBridgeError("reasoning_effort must be a string", "reasoning_effort")
 		}
@@ -155,7 +172,7 @@ func ConvertRequest(req *oai.ChatRequest, cfgListen []string, passReasoning bool
 	args.ToolChoice = toolChoice
 
 	// ---- 4. tools 处理:客户端 function 直通 + 内置工具合并去重(§10.6) ----
-	tools, toolDecisions, effectiveBuiltin := mergeTools(req.Tools, cfgListen)
+	tools, toolDecisions, effectiveBuiltin := mergeTools(req.Tools, opts.BuiltinTools, opts.MapCCWebSearch)
 	out.Decisions = append(out.Decisions, toolDecisions...)
 
 	// required 遇内置工具降级 auto(§10.6 规则 2)
@@ -178,7 +195,7 @@ func ConvertRequest(req *oai.ChatRequest, cfgListen []string, passReasoning bool
 	}
 
 	// ---- 5. messages → inputs / instructions(§10.2) ----
-	inputs, instructions, sideEffects, err := convertMessages(req.Messages, passReasoning, out)
+	inputs, instructions, sideEffects, err := convertMessages(req.Messages, opts.PassReasoning, out)
 	if err != nil {
 		return nil, err
 	}
@@ -250,19 +267,33 @@ func normalizeToolChoice(raw json.RawMessage, tools []oai.Tool, out *ConvertedRe
 }
 
 // mergeTools function 直通 + 内置工具(客户端携带优先,config 默认注入去重)
+// ccSearch 开时:CC 的 WebSearch function(name 不区分大小写)被识别为搜索意图——
+// 无配置时转服务端 web_search_premium(D-28 实测质量更高);config 已配置搜索档位则跟随配置。
 // 返回 (最终 tools, 决策痕迹, 生效内置工具集)
-func mergeTools(clientTools []oai.Tool, cfgBuiltin []string) ([]json.RawMessage, []string, []string) {
+func mergeTools(clientTools []oai.Tool, cfgBuiltin []string, mapCCSearch bool) ([]json.RawMessage, []string, []string) {
 	var decisions []string
 	if len(clientTools) == 0 && len(cfgBuiltin) == 0 {
 		return nil, nil, nil
 	}
 	var out []json.RawMessage
 	present := map[string]bool{}
+	ccSearch := false
 
-	// 客户端 function 直通
+	// 客户端 function 直通(WebSearch 例外,由下方收尾接管)
 	for _, t := range clientTools {
 		switch t.Type {
 		case "function":
+			if mapCCSearch {
+				var fn struct {
+					Name string `json:"name"`
+				}
+				// 宽松归一匹配 CC 的 WebSearch:小写 + 去 _/-(WebSearch/web_search/websearch 全命中)
+				if json.Unmarshal(t.Function, &fn) == nil &&
+					strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(fn.Name)) == "websearch" {
+					ccSearch = true
+					continue // 不直通,收为搜索意图
+				}
+			}
 			b, _ := json.Marshal(map[string]any{
 				"type":     "function",
 				"function": t.Function,
@@ -306,6 +337,13 @@ func mergeTools(clientTools []oai.Tool, cfgBuiltin []string) ([]json.RawMessage,
 		}
 		out = filtered
 		delete(present, "web_search")
+	}
+
+	// CC WebSearch 收尾:满足搜索意图(无任何已生效搜索档位时才注入默认 premium)
+	if ccSearch && !present["web_search"] && !present["web_search_premium"] {
+		out = append(out, builtinToolDef("web_search_premium"))
+		present["web_search_premium"] = true
+		decisions = append(decisions, "cc WebSearch function -> builtin web_search_premium")
 	}
 
 	// 生效内置集(按 priority 排序输出,稳定日志)

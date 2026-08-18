@@ -370,6 +370,7 @@ func (s *streamSession) finalize(w io.Writer, f http.Flusher, audit *StreamAudit
 		if u, ok := repairUsage(s.cfg.InputText, outputText); ok {
 			usage = &usageFromStream{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens}
 			audit.UsageRepaired = true
+			s.usage = usage // 回填:finishAudit 从 s.usage 拷贝 access 日志字段(否则修复值打出全 0)
 		}
 	}
 
@@ -397,6 +398,9 @@ func (s *streamSession) finalize(w io.Writer, f http.Flusher, audit *StreamAudit
 				"prompt_tokens":     usage.PromptTokens,
 				"completion_tokens": usage.CompletionTokens,
 				"total_tokens":      usage.TotalTokens,
+				"prompt_tokens_details": map[string]any{
+					"cached_tokens": 0, // 上游无缓存,如实回 0(D-34)
+				},
 			},
 		}
 		s.sendRaw(w, f, usageChunk)
@@ -491,9 +495,10 @@ func (s *streamSession) writeNonStreamPackage(w http.ResponseWriter, audit *Stre
 	}
 	if usage != nil {
 		resp.Usage = &OaiUsage{
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			TotalTokens:      usage.TotalTokens,
+			PromptTokens:        usage.PromptTokens,
+			CompletionTokens:    usage.CompletionTokens,
+			TotalTokens:         usage.TotalTokens,
+			PromptTokensDetails: &OaiPromptTokensDetails{CachedTokens: 0}, // 上游无缓存,如实回 0(D-34)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

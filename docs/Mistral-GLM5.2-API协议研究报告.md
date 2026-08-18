@@ -238,6 +238,8 @@ data: {"type":"message.output.delta","output_index":0,"content_index":0,"id":"ms
 | restart | POST /v1/conversations/{id}/restart | 从 `from_entry_id` 重启,返回新会话(流式版 `restart#stream`) |
 | 流式版 | start_stream / append_stream | 方法体加 `"stream": true` |
 
+> ⚠️ **store 与 prompt caching 无关**(2026-08-19 A/B 实测钉死):store=true/false 两态同前缀连打,TTFT 同噪声分布(1.2~5.6s)无命中提速,usage 恒 `{prompt/completion/total}` 三字段且 prompt 全额计费,无任何 cached 字段。store=true 仅是会话存储(续聊省重发),不产生缓存折扣。渠道(glm-5-2)**不存在 prompt caching 能力**。
+
 ### 5.8 错误响应双 schema ⚠️
 
 实测存在**两种不同形状**,消费端必须双路归一:
@@ -366,7 +368,8 @@ data: {"type":"message.output.delta","output_index":0,"content_index":0,"id":"ms
 | **usage 偶发归 0(flaky)** | 上游**正常是会返回真实用量**的(prompt/completion/total 三字段);但偶发三个数全变 0——同 prompt 隔天复现(3/5),今天并发复测又全正常(3/3)。与截断无关联,是上游上报 bug。→ 转换侧修复策略见 [design.md](design.md) 修复件清单 |
 | **`tool_choice: "required"` 产生调用洪水** | **多轮复测钉死**:单工具 mt=1000 → 2/2 次均为 91 个**完全相同**的 call(确定性);单工具 mt=100 → 9 个;双工具 mt=300 → 26 个 call(weather/time 各半、**参数每次不同**城市轮换);completion_tokens **精确顶满 max_tokens**,无文本输出。本质:required 约束下模型每"步"都被强制调工具,无结果时只能继续调,直到预算耗尽。→ 转换侧熔断策略见 [design.md](design.md) 修复件清单 |
 | **截断无任何标记** | max_tokens 精确截断时 done 正常返回、无 length 标记、无 truncated 字段,只能靠 `completion_tokens >= max_tokens` 猜测 |
-| **guided-JSON + 流式 + high:正文开头重复** | json_schema 流式 + reasoning_effort=high 时,正文开头的 `{` 被发两遍——且**分块边界每次不同**(见过 `"{\n"`+`"{\n"` 全等双份,也见过 `"{\"`+`"{"` 错位双份),拼接即非法 JSON(多轮复现)。effort=none 与纯文本流式均不复现。修复方案见 [design.md](design.md) 修复件清单 |
+| **guided-JSON + 流式 + high:正文开头重复** | json_schema/json_object 流式 + reasoning_effort=high 时,正文开头的 `{` 被发两遍——且**分块边界每次不同**(见过 `"{\n"`+`"{\n"` 全等双份,也见过 `"{\"`+`"{"` 错位双份),拼接即非法 JSON(多轮复现)。effort=none 与纯文本流式均不复现。修复方案见 [design.md](design.md) 修复件清单 |
+| **guided-JSON + 非流式 + high:同样重复**(2026-08-19 新增) | 桥默认注入 reasoning high(D-35)后,E2E 实测**非流式** json_object/json_schema 响应正文同样以 `{\n{` 重复开头(2/2 复现);折叠器对该面同规适用(见 design.md D-38) |
 | **high 模式下思考可吃满 max_tokens 致正文为空** | reasoning_effort=high + max_tokens 较小时,思考 delta 可占满全部额度(实测 300 全用完,正文 0 delta)——非 bug,是预算分配;客户端需给足 max_tokens |
 | OAI 端点不可用 | glm-5-2 在 `/v1/chat/completions` 的 TPM=0,直接 429 |
 | temperature 范围窄 | 仅 0~1(OAI 标准 0~2) |

@@ -43,6 +43,9 @@ services:
     env_file:
       - path: .env
         required: false
+    # 日志时区(二进制已 embed tzdata,TZ 全平台生效;要别的时区改这一行)
+    environment:
+      - TZ=Asia/Shanghai
     # 生产接入 new-api 共享网络:此处与文末 networks 段成对取消注释
     # 每行只删行首一个 # 字符(不动其后空格),缩进即自动对齐
     #networks:

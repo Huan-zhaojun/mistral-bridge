@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed 时区库:distroless 容器无 /usr/share/zoneinfo,embed 后 TZ 环境变量全平台生效
 
 	"mistral-bridge/internal/config"
 	"mistral-bridge/internal/convert"
@@ -79,6 +80,7 @@ func main() {
 		"builtin_tools_effective", cfg.BuiltinTools,
 		"proxy_mode", dialResult.Mode,
 		"pass_reasoning", cfg.PassReasoning,
+		"map_cc_websearch", cfg.MapCCWebSearch,
 	)
 
 	chat := convert.NewChatHandler(convert.ChatConfig{
@@ -86,6 +88,7 @@ func main() {
 		Client:         upstreamClient,
 		BuiltinTools:   cfg.BuiltinTools,
 		PassReasoning:  cfg.PassReasoning,
+		MapCCWebSearch: cfg.MapCCWebSearch,
 		SSEIdleTimeout: sseIdleTimeout,
 		Logger:         logger,
 	})

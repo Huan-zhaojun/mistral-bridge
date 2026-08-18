@@ -21,7 +21,7 @@ curl -X POST http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"glm-5.2","messages":[{"role":"user","content":"Say OK"}]}'
 ```
 
-忘记了:Authorization 头原样透传;无环境依赖可启动。
+Authorization 头原样透传;无环境依赖可启动。
 
 ## Docker 部署
 
@@ -44,6 +44,8 @@ docker compose up -d --build      # 零配置一键
 | `UPSTREAM_TIMEOUT_S` | `600` | 上游整体读超时(非流式可挂 >480s) |
 | `BUILTIN_TOOLS` | `""`(不注入) | 可选默认开启:web_search / web_search_premium / code_interpreter / image_generation |
 | `PASS_REASONING` | `true` | 历史 thinking 回传为 reasoning_content(可关省 context) |
+| `MAP_CC_WEBSEARCH` | `true` | CC 的 WebSearch function 自动接管为服务端内置搜索(跟随 BUILTIN_TOOLS 档位,无配默认 premium);false 则原样直通 |
+| `TZ` | 系统时区 | 日志时区(compose 部署默认 Asia/Shanghai,可改) |
 | `PROXY` | `""` | 自定义代理(socks5://、http://、裸 host:port) |
 | `SYSTEM_PROXY` | `auto` | auto=自动检测(env > Windows 注册表);off=完全直连 |
 | `LOG_LEVEL` | `info` | debug/info/warn/error |
@@ -52,6 +54,8 @@ docker compose up -d --build      # 零配置一键
 **内置工具默认不注入**:客户端 `tools` 携带就透传,配置项只在需要默认开启时使用。开普通搜索和 premium 搜索永远二选一(premium 优先);`tool_choice: required` 遇内置工具自动降 auto。
 
 中文输入法宽容解析:全角逗号 `,`、顿号 `、`、`【】`、弯引号都原样接受(未知项 WARN 并过滤,不阻断启动)。
+
+**思考默认开启**:不传 / 传 `auto` / 传任意强度 `reasoning_effort`,上游一律按 `high` 执行(glm-5.2 仅 high/none 两档);唯一关闭方式是客户端显式传 `"none"`。`usage` 恒带 `prompt_tokens_details.cached_tokens: 0`(渠道无缓存,如实回 0)。
 
 ## 测试
 

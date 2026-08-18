@@ -141,6 +141,12 @@ L3 `docker compose up -d --build` + curl 冒烟套件。
 - **[D-30]** 测试 max_tokens 预算拉满 32000/64000,防推理截断假 bug —— **生效**
 - **[D-31]** D-29 网络语义修正:compose v2 对同名已存网络做 label 硬校验直接拒启(v2.40.3 `resolveOrCreateNetwork` 源码实证,"自动复用"从未成立);compose ≥v5.4.0(2026-08)官方重构为按名复用仅 WARN。定案:compose.yaml 网络段整体注释(默认纯自足),生产接已建的 new-api_default 时成对取消注释、以 external 引用(桥上 name+auto-create 两种形态都放弃:v2 必炸、v5.4 才活,external 全版本安全);external 下 down 永不触碰该网络 —— **生效**
 - **[D-32]** 模型名对外标准化 `glm-5.2`(Z.ai 产品名):modelAlias 三键全收(标准化名/上游真名 glm-5-2/平台别名 zai-glm-5-2),上游请求统一归一 glm-5-2,响应 model 回显客户端原值;/v1/models 只挂 glm-5.2 + aliases 列双旧名;E2E 全面改用 glm-5.2 实测闭环 —— **生效**
+- **[D-33]** CC WebSearch 接管:CC 经 axonhub/new-api 把 WebSearch 下发为**普通 function**(axonhub Request 26174 实测),非官方网关下 CC 客户端无搜索执行能力 → 桥将归一命中 websearch(function.name 小写去 `_`/`-`)者收为搜索意图:config 已配搜索档(普/premium)则跟随,无配默认 `web_search_premium`(D-28);`MAP_CC_WEBSEARCH=false` 整个关闭直通 —— **生效**
+- **[D-34]** cached_tokens 如实回 0:上游 done 事件 usage 仅三字段(原文实证),store 两态 A/B 实测无缓存任何信号(TTFT 噪声同分布、prompt 恒定全量计费)——渠道无 prompt caching;usage 恒带 `prompt_tokens_details:{cached_tokens:0}`(0 是事实,下游面板可见字段)—— **生效**
+- **[D-35]** reasoning 默认开(无 env):缺省/auto/任意强度一律 high;仅客户端显式 `none` 直通关闭 —— **生效**
+- **[D-36]** 日志时区:`import _ "time/tzdata"` embed + TZ env 生效;compose 默认 `TZ=Asia/Shanghai`;注:Windows 原生 Go 进程不读 TZ(走注册表时区,实测),此机制面向 Linux 容器 —— **生效**
+- **[D-37]** bug 修复:stream 直发路径 usage 兜底修复值未回填 `s.usage`(非流式有回填、直发漏),access 日志 usage_* 恒 0 但 usage_repaired=true;客户端收到的 chunk 一直是对的,仅观测受损 —— **已修(F1)**
+- **[D-38]** 修复件①覆盖面扩大:F5 默认 high 注入后实测**非流式** guided-JSON 同样触发首块重复(E2E A6/A7 复现);折叠器推广到 ConvertResponse(整串 Feed+Flush 同构语义),ConvertResponse 签名加 isJSON;access 日志非流式同打 `json_dup_folded` —— **生效**
 
 ## 10. 相关索引
 

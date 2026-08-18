@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"mistral-bridge/internal/mistral"
+	"mistral-bridge/internal/repair"
 	"mistral-bridge/internal/tokenizer"
 )
 
@@ -48,10 +49,16 @@ type OaiToolCall struct {
 }
 
 type OaiUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-	// 无 cached_tokens(上游计费体系无此字段,省略即合法;OAI 规范允许 absence)
+	PromptTokens        int                     `json:"prompt_tokens"`
+	CompletionTokens    int                     `json:"completion_tokens"`
+	TotalTokens         int                     `json:"total_tokens"`
+	PromptTokensDetails *OaiPromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+// OaiPromptTokensDetails 上游无 prompt caching 能力(实测 store 两态均无缓存字段/提速),
+// 如实回 cached_tokens=0 让下游「看得到字段、读到真相」(D-34;0 非编造,R6 允许)
+type OaiPromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // aggregated 非流式聚合形态(支撑 finish_reason/usage 修复判断)
@@ -65,12 +72,15 @@ type aggregated struct {
 type RepairInfo struct {
 	UsageRepaired bool // usage 走了 tokenizer 兜底
 	EmptyContent  bool // 上游 200 但正文空(guided/搜索+high 偶发,观测用)
+	JSONFolded    bool // ① 折叠:guided-JSON 首块重复(非流式面,F5 默认 high 后实测同炸)
 }
 
 // ConvertResponse 非流式路径:上游 ConversationResponse body → OAI body。
 // usage 全 0 时走 tokenizer 兜底(±1 精确,非猜测);model 回显客户端入参。
 // maxTokensArg:客户端 max_tokens(供 finish_reason length 判断;未传 = 0)
-func ConvertResponse(upstreamBody []byte, model string, inputText string, maxTokensArg int) ([]byte, *RepairInfo, error) {
+// isJSON:guided-JSON 场景(response_format json_*)——非流式也会触发首块重复,
+// 同样过 ① 折叠器(整串一次 Feed+Flush,语义与流式逐 delta 完全同构)
+func ConvertResponse(upstreamBody []byte, model string, inputText string, maxTokensArg int, isJSON bool) ([]byte, *RepairInfo, error) {
 	var resp mistral.ConversationResponse
 	if err := json.Unmarshal(upstreamBody, &resp); err != nil {
 		return nil, nil, fmt.Errorf("decode upstream response: %w", err)
@@ -102,6 +112,16 @@ func ConvertResponse(upstreamBody []byte, model string, inputText string, maxTok
 		}
 	}
 
+	// ① 折叠:guided-JSON 非流式面——实测 F5 默认 high 注入后非流式同样首块重复;
+	// 整串一次 Feed+Flush,与流式逐 delta 语义同构(合法 JSON 永不以 {{ 开头,零误伤)。
+	// 必须在 res 构造前完成(res 的 Content 是快照取值)
+	folded := false
+	if isJSON && len(agg.texts) > 0 {
+		f := repair.NewJSONFolder()
+		agg.texts[0] = f.Feed(agg.texts[0]) + f.Flush()
+		folded = f.Folded()
+	}
+
 	res := &OaiChatResponse{
 		ID:      normalizeID(resp.ConversationID),
 		Object:  "chat.completion",
@@ -120,9 +140,10 @@ func ConvertResponse(upstreamBody []byte, model string, inputText string, maxTok
 	}
 	if usage != nil {
 		res.Usage = &OaiUsage{
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			TotalTokens:      usage.TotalTokens,
+			PromptTokens:        usage.PromptTokens,
+			CompletionTokens:    usage.CompletionTokens,
+			TotalTokens:         usage.TotalTokens,
+			PromptTokensDetails: &OaiPromptTokensDetails{CachedTokens: 0}, // 上游无缓存,如实回 0(D-34)
 		}
 	}
 	out, err := json.Marshal(res)
@@ -130,7 +151,7 @@ func ConvertResponse(upstreamBody []byte, model string, inputText string, maxTok
 		return nil, nil, err
 	}
 	empty := len(agg.texts) == 0 && len(agg.toolCalls) == 0
-	return out, &RepairInfo{UsageRepaired: repaired, EmptyContent: empty}, nil
+	return out, &RepairInfo{UsageRepaired: repaired, EmptyContent: empty, JSONFolded: folded}, nil
 }
 
 // mergeOutputContent message.output 条目内容(text/thinking 双态 + 多阶段合并)

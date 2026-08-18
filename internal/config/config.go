@@ -17,6 +17,7 @@ type Config struct {
 	BuiltinTools    []string  // BUILTIN_TOOLS 解析后的生效集(已过滤去重)
 	ToolsDropped    []string  // 被白名单过滤丢弃的项(供启动 WARN)
 	PassReasoning   bool      // PASS_REASONING,history reasoning_content 回传
+	MapCCWebSearch  bool      // MAP_CC_WEBSEARCH,CC 的 WebSearch function 映射为服务端内置搜索
 	Proxy           string    // PROXY,自定义代理(空=不用)
 	SystemProxy     string    // SYSTEM_PROXY,auto|off
 	Log             LogConfig // 日志配置
@@ -39,6 +40,7 @@ func Default() *Config {
 		BuiltinTools:    nil,
 		ToolsDropped:    nil,
 		PassReasoning:   true,
+		MapCCWebSearch:  true,
 		Proxy:           "",
 		SystemProxy:     "auto",
 		Log: LogConfig{
@@ -75,6 +77,9 @@ func Load() (*Config, error) {
 
 	if v, ok := parseBoolEnv("PASS_REASONING"); ok {
 		cfg.PassReasoning = v
+	}
+	if v, ok := parseBoolEnv("MAP_CC_WEBSEARCH"); ok {
+		cfg.MapCCWebSearch = v
 	}
 	if v := strings.TrimSpace(os.Getenv("PROXY")); v != "" {
 		cfg.Proxy = v

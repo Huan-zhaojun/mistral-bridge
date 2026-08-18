@@ -44,7 +44,7 @@ func TestA_ClientErrors(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			req := mustParse(t, c.body)
-			_, err := ConvertRequest(req, nil, true)
+			_, err := ConvertRequest(req, Options{PassReasoning: true})
 			if err == nil {
 				if c.param == "" {
 					return // 桥本不拦截
@@ -69,7 +69,7 @@ func TestB_SilentRepairs(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[
   {"role":"system","content":"A"},{"role":"developer","content":"B"},
   {"role":"user","content":"hi"}]}`)
-		conv, err := ConvertRequest(req, nil, true)
+		conv, err := ConvertRequest(req, Options{PassReasoning: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +82,7 @@ func TestB_SilentRepairs(t *testing.T) {
 
 	t.Run("seed renamed to random_seed", func(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],"seed":42}`)
-		conv, _ := ConvertRequest(req, nil, true)
+		conv, _ := ConvertRequest(req, Options{PassReasoning: true})
 		var up map[string]any
 		json.Unmarshal(conv.Body, &up)
 		args := up["completion_args"].(map[string]any)
@@ -93,7 +93,7 @@ func TestB_SilentRepairs(t *testing.T) {
 
 	t.Run("reasoning_effort medium->high", func(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"medium"}`)
-		conv, _ := ConvertRequest(req, nil, true)
+		conv, _ := ConvertRequest(req, Options{PassReasoning: true})
 		var up map[string]any
 		json.Unmarshal(conv.Body, &up)
 		args := up["completion_args"].(map[string]any)
@@ -104,7 +104,7 @@ func TestB_SilentRepairs(t *testing.T) {
 
 	t.Run("tool_choice any -> auto", func(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],"tool_choice":"any"}`)
-		conv, _ := ConvertRequest(req, nil, true)
+		conv, _ := ConvertRequest(req, Options{PassReasoning: true})
 		var up map[string]any
 		json.Unmarshal(conv.Body, &up)
 		args := up["completion_args"].(map[string]any)
@@ -117,7 +117,7 @@ func TestB_SilentRepairs(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],
   "tools":[{"type":"function","function":{"name":"only_one","description":"d","parameters":{}}}],
   "tool_choice":{"type":"function","function":{"name":"only_one"}}}`)
-		conv, _ := ConvertRequest(req, nil, true)
+		conv, _ := ConvertRequest(req, Options{PassReasoning: true})
 		if !conv.ForcedStream {
 			t.Errorf("ForcedStream should be true")
 		}
@@ -134,7 +134,7 @@ func TestB_SilentRepairs(t *testing.T) {
   {"type":"text","text":"see:"},
   {"type":"image_url","image_url":{"url":"https://x.com/y.png"}}
 ]}]}`)
-		conv, err := ConvertRequest(req, nil, true)
+		conv, err := ConvertRequest(req, Options{PassReasoning: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +155,7 @@ func TestB_SilentRepairs(t *testing.T) {
 
 	t.Run("max_completion_tokens > max_tokens picks larger", func(t *testing.T) {
 		req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],"max_tokens":10,"max_completion_tokens":50}`)
-		conv, _ := ConvertRequest(req, nil, true)
+		conv, _ := ConvertRequest(req, Options{PassReasoning: true})
 		var up map[string]any
 		json.Unmarshal(conv.Body, &up)
 		args := up["completion_args"].(map[string]any)
@@ -169,7 +169,7 @@ func TestB_SilentRepairs(t *testing.T) {
   {"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},
   {"role":"tool","tool_call_id":"call_1","content":"result-1"},
   {"role":"user","content":"next"}]}`)
-		conv, err := ConvertRequest(req, nil, true)
+		conv, err := ConvertRequest(req, Options{PassReasoning: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +194,7 @@ func TestB_SilentRepairs(t *testing.T) {
 func TestC_IgnoredParams(t *testing.T) {
 	req := mustParse(t, `{"model":"glm-5-2","messages":[{"role":"user","content":"hi"}],
  "parallel_tool_calls":false,"user":"u1","prompt_cache_key":"k"}`)
-	if _, err := ConvertRequest(req, nil, true); err != nil {
+	if _, err := ConvertRequest(req, Options{PassReasoning: true}); err != nil {
 		t.Fatalf("should not error, got %v", err)
 	}
 }
@@ -206,7 +206,7 @@ func TestC_IgnoredParams(t *testing.T) {
 func TestD_ModelAlias(t *testing.T) {
 	for _, in := range []string{"glm-5.2", "glm-5-2", "zai-glm-5-2"} {
 		req := mustParse(t, fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, in))
-		conv, err := ConvertRequest(req, nil, true)
+		conv, err := ConvertRequest(req, Options{PassReasoning: true})
 		if err != nil {
 			t.Fatalf("%s: %v", in, err)
 		}
@@ -224,10 +224,85 @@ func TestD_ModelAlias(t *testing.T) {
 	}
 }
 
+// F5 默认思考(D-35):缺省/auto/任意强度 → high;仅 none 直通。
+func TestD_ReasoningDefaultHigh(t *testing.T) {
+	upstreamEffort := func(t *testing.T, body string) any {
+		conv, err := ConvertRequest(mustParse(t, body), Options{PassReasoning: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var up map[string]any
+		json.Unmarshal(conv.Body, &up)
+		args, _ := up["completion_args"].(map[string]any)
+		return args["reasoning_effort"]
+	}
+	if v := upstreamEffort(t, `{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}`); v != "high" {
+		t.Errorf("absent reasoning_effort should inject high, got %v", v)
+	}
+	if v := upstreamEffort(t, `{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"auto"}`); v != "high" {
+		t.Errorf("auto should map to high, got %v", v)
+	}
+	if v := upstreamEffort(t, `{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"xhigh"}`); v != "high" {
+		t.Errorf("xhigh should map to high, got %v", v)
+	}
+	if v := upstreamEffort(t, `{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}],"reasoning_effort":"none"}`); v != "none" {
+		t.Errorf("none must passthrough, got %v", v)
+	}
+}
+
+// F2 CC WebSearch 映射(D-33):function name=WebSearch(不区分大小写)→ 服务端内置搜索。
+func TestD_CCWebSearchMapping(t *testing.T) {
+	toolset := `,"tools":[{"type":"function","function":{"name":"WebSearch","description":"Search the web","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}}]}`
+	body := `{"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}`
+	body = body[:len(body)-1] + toolset // toolset 自带根对象收官
+	toolTypes := func(t *testing.T, opts Options) []string {
+		var up map[string]any
+		conv, err := ConvertRequest(mustParse(t, body), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		json.Unmarshal(conv.Body, &up)
+		var types []string
+		for _, raw := range up["tools"].([]any) {
+			m := raw.(map[string]any)
+			s := m["type"].(string)
+			if s == "function" {
+				s = "function:" + m["function"].(map[string]any)["name"].(string)
+			}
+			types = append(types, s)
+		}
+		return types
+	}
+	contains := func(ts []string, want string) bool {
+		for _, x := range ts {
+			if x == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	// ① 默认开:无配置 → premium,function 不直通
+	ts := toolTypes(t, Options{MapCCWebSearch: true})
+	if !contains(ts, "web_search_premium") || contains(ts, "function:WebSearch") {
+		t.Errorf("default mapping should yield builtin premium without function passthrough, got %v", ts)
+	}
+	// ② config 已配普搜 → 跟随配置(普搜),不再叠 premium
+	ts = toolTypes(t, Options{MapCCWebSearch: true, BuiltinTools: []string{"web_search"}})
+	if !contains(ts, "web_search") || contains(ts, "web_search_premium") {
+		t.Errorf("config plain search should win, got %v", ts)
+	}
+	// ③ off → function 原样直通,无内置
+	ts = toolTypes(t, Options{})
+	if !contains(ts, "function:WebSearch") || contains(ts, "web_search_premium") {
+		t.Errorf("off should passthrough function untouched, got %v", ts)
+	}
+}
+
 func TestD_Passthrough(t *testing.T) {
 	req := mustParse(t, `{"model":"zai-glm-5-2","messages":[{"role":"user","content":"hi"}],
  "stream":false,"top_p":0.9,"stop":["END"],"frequency_penalty":0.3,"presence_penalty":0.7}`)
-	conv, err := ConvertRequest(req, nil, true)
+	conv, err := ConvertRequest(req, Options{PassReasoning: true})
 	if err != nil {
 		t.Fatal(err)
 	}

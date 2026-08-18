@@ -179,6 +179,40 @@ func TestStreamReplay_FloodAbort(t *testing.T) {
 	}
 }
 
+// TestStreamReplay_UsageRepairBackfill F1 回归:done 带 usage 全 0 → tokenizer 兜底
+// 且直发路径兜底值必须回填 audit(否则 access 日志 usage_* 打 0)
+func TestStreamReplay_UsageRepairBackfill(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("event: conversation.response.started\ndata: {}\n\n")
+	d, _ := json.Marshal(map[string]any{
+		"type": "message.output.delta", "content": "hi there",
+	})
+	sb.WriteString("event: message.output.delta\ndata: " + string(d) + "\n\n")
+	sb.WriteString("event: conversation.response.done\ndata: {\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}\n\n")
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sb.String())
+	}))
+	defer upstream.Close()
+	resp, _ := http.Get(upstream.URL)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	audit := HandleStream(rec, req, resp, StreamConfig{
+		OaiModel: "glm-5-2", ClientStream: true,
+		InputText: "a prompt of several real tokens",
+		Logger:    testLogger(), ReqID: "t4",
+	})
+	if !audit.UsageRepaired {
+		t.Fatal("expected UsageRepaired=true on zero usage")
+	}
+	if audit.UsagePromptTok <= 0 || audit.UsageCompletionTok <= 0 {
+		t.Errorf("repaired usage not backfilled into audit: prompt=%d completion=%d",
+			audit.UsagePromptTok, audit.UsageCompletionTok)
+	}
+}
+
 // itoa 无 fmt 依赖的小助手
 func itoa(i int) string {
 	if i == 0 {

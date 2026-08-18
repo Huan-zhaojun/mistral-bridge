@@ -24,7 +24,7 @@ Mistral 平台 GLM-5.2 的 OAI Chat Completions 协议转换转发器(Go 单二�
 | R3 | **日志红线永不记**:Authorization 值、请求 body 全文、large 用户数据 | 安全隐私 |
 | R4 | **不 clamp 参数**：上游拒收(temperature>1、max_tokens>1M)，透传其 422、规范化为 400 | 不改用户语义 |
 | R5 | **tool_calls.index 按新 tool_call_id 出现顺序分配**:绝不用上游 output_index | 上游槽位被 thinking/text 混占 |
-| R6 | **绝不编造 usage / cached_tokens / reasoning_tokens**:usage=0 时走 tokenizer 精确兜底，tokenizer 不可用时如实回传原值或整体省略 | 计费信号不可伪造 |
+| R6 | **绝不编造 usage / reasoning_tokens**:usage=0 时走 tokenizer 精确兜底，tokenizer 不可用时如实回传原值或整体省略;`cached_tokens` 恒如实回 0(渠道无缓存,D-34) | 计费信号不可伪造 |
 | R7 | **测试 max_tokens≥32000**:thinking 可能先吃空预算导致正文截断出现假 bug | 历史教训 |
 
 ---

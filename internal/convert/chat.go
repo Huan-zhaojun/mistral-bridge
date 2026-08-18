@@ -23,6 +23,7 @@ type ChatConfig struct {
 	Client         *http.Client
 	BuiltinTools   []string
 	PassReasoning  bool
+	MapCCWebSearch bool
 	SSEIdleTimeout time.Duration
 	Logger         *slog.Logger
 }
@@ -78,7 +79,11 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ---- 4) 协议转换(§10) ----
-	conv, err := ConvertRequest(req, h.cfg.BuiltinTools, h.cfg.PassReasoning)
+	conv, err := ConvertRequest(req, Options{
+		BuiltinTools:   h.cfg.BuiltinTools,
+		PassReasoning:  h.cfg.PassReasoning,
+		MapCCWebSearch: h.cfg.MapCCWebSearch,
+	})
 	if err != nil {
 		if be, ok := err.(*BridgeError); ok {
 			WriteOaiError(w, http.StatusBadRequest, be.Message, be.Type,
@@ -153,6 +158,7 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ---- 8) 2xx:非流式 / 流式 分流 ----
+	isJSON := conv.ResponseFormat == "json_object" || conv.ResponseFormat == "json_schema"
 	if !conv.Stream && !conv.ForcedStream {
 		// 非流式(客户端请求流式=false):读全并转换
 		defer resp.Body.Close()
@@ -164,7 +170,7 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		maxTok := maxOf(req.MaxTokens, req.MaxCompletionTok)
-		oaiBody, repair, err := ConvertResponse(upBody, conv.OriginalModel, conv.InputTextForUsage, maxTok)
+		oaiBody, repair, err := ConvertResponse(upBody, conv.OriginalModel, conv.InputTextForUsage, maxTok, isJSON)
 		if err != nil {
 			WriteOaiError(w, http.StatusBadGateway, "upstream response decode failed", "api_error", nil, nil)
 			h.accessLog(reqID, r, start, resp.StatusCode, http.StatusBadGateway, "decode_err", nil)
@@ -181,7 +187,6 @@ func (h *chatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ---- 9) 流式(或桥强制流式) ----
 	h.passthroughHeaders(w, resp, outReqID)
-	isJSON := conv.ResponseFormat == "json_object" || conv.ResponseFormat == "json_schema"
 	audit := HandleStream(w, r, resp, StreamConfig{
 		OaiModel:     conv.OriginalModel,
 		MaxTokens:    maxOf(req.MaxTokens, req.MaxCompletionTok),
@@ -278,6 +283,9 @@ func (h *chatHandler) accessLog(reqID string, r *http.Request, start time.Time, 
 	}
 	if repair != nil && repair.UsageRepaired {
 		attrs = append(attrs, "usage_repaired", true)
+	}
+	if repair != nil && repair.JSONFolded {
+		attrs = append(attrs, "json_dup_folded", true)
 	}
 	if repair != nil && repair.EmptyContent {
 		// 非流式空回:上游 200 但无 text 无 tool_calls(guaranteed/搜索+high 偶发;观测,_jsorry缺陷,

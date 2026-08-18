@@ -53,7 +53,7 @@ func TestConvertResponseShapes(t *testing.T) {
  "created_at":"2026-08-17T12:00:00Z",
  "outputs":[{"object":"entry","type":"message.output","role":"assistant","content":"PONG"}],
  "usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}`
-		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "hi", 0)
+		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "hi", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +79,7 @@ func TestConvertResponseShapes(t *testing.T) {
  "content":[{"type":"thinking","thinking":[{"type":"text","text":"T1"}]},
             {"type":"text","text":"Hello"}]}],
  "usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`
-		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "x", 0)
+		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "x", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func TestConvertResponseShapes(t *testing.T) {
  {"type":"tool.execution","name":"web_search"},
  {"type":"message.output","content":[{"type":"text","text":"P2"}]}],
  "usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`
-		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "x", 0)
+		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "x", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,7 +128,7 @@ func TestConvertResponseShapes(t *testing.T) {
 	t.Run("usage zero triggers tokenizer repair", func(t *testing.T) {
 		body := `{"conversation_id":"conv_c","outputs":[{"type":"message.output","content":"PONG"}],
  "usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`
-		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "hello world", 0)
+		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "hello world", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -149,12 +149,41 @@ func TestConvertResponseShapes(t *testing.T) {
 		}
 	})
 
-	t.Run("no cached_tokens ever emitted", func(t *testing.T) {
+	// D-34:上游无缓存,如实回 prompt_tokens_details.cached_tokens=0(0 非编造)
+	t.Run("cached_tokens truthfully zero", func(t *testing.T) {
 		body := `{"conversation_id":"conv_d","outputs":[{"type":"message.output","content":"x"}],
  "usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`
-		out, _, _ := ConvertResponse([]byte(body), "glm-5-2", "x", 0)
-		if strings.Contains(string(out), "cached_tokens") {
-			t.Error("cached_tokens must be omitted entirely")
+		out, _, _ := ConvertResponse([]byte(body), "glm-5-2", "x", 0, false)
+		if !strings.Contains(string(out), `"prompt_tokens_details":{"cached_tokens":0}`) {
+			t.Errorf("cached_tokens should be present as 0, got: %s", out)
+		}
+	})
+
+	// D-38:guided-JSON 非流式面——F5 默认 high 注入后,上游非流式也首块重复。
+	// 折叠器对该面同规适用(合法 JSON 永不以 {{ 开头)。
+	t.Run("nonstream guided-json dup fold", func(t *testing.T) {
+		body := `{"conversation_id":"conv_f","outputs":[{"type":"message.output","content":"{\n{\n  \"name\": \"Beijing\"\n}"}],
+ "usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`
+		out, repair, _ := ConvertResponse([]byte(body), "glm-5-2", "x", 0, true)
+		if repair == nil || !repair.JSONFolded {
+			t.Error("expected JSONFolded=true on nonstream dup head")
+		}
+		var j struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(out, &j); err != nil {
+			t.Fatal(err)
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(j.Choices[0].Message.Content), &obj); err != nil {
+			t.Fatalf("folded content should be legal JSON: %v; content=%q", err, j.Choices[0].Message.Content)
+		}
+		if obj["name"] != "Beijing" {
+			t.Errorf("payload broken after fold: %v", obj)
 		}
 	})
 
@@ -166,7 +195,7 @@ func TestConvertResponseShapes(t *testing.T) {
 		// usage 原样来自上游的 0 值在没有任何修复资源时也能透传。
 		body := `{"conversation_id":"conv_e","outputs":[{"type":"message.output","content":""}],
  "usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`
-		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "", 0)
+		out, _, err := ConvertResponse([]byte(body), "glm-5-2", "", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +219,7 @@ func TestConvertResponseShapes(t *testing.T) {
 	// 只有 tokenizer 也不可用(第 24 条第三层)时 usage 才整体省略——不会编造。
 	t.Run("usage absent upstream + tokenizer available: bridge computes exact count", func(t *testing.T) {
 		body := `{"conversation_id":"conv_f","outputs":[{"type":"message.output","content":"hi"}]}`
-		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "in", 0)
+		out, repair, err := ConvertResponse([]byte(body), "glm-5-2", "in", 0, false)
 		if err != nil {
 			t.Fatal(err)
 		}
