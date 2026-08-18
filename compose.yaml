@@ -50,6 +50,6 @@ services:
     restart: unless-stopped
 
 #生产接入 new-api 已创建的共享网络(须已存在):与 bridge 服务 networks 行成对删行首 # 即启用
-networks:
-  new-api_default:
-    external: true
+#networks:
+#  new-api_default:
+#    external: true
