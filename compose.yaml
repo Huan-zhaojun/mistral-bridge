@@ -1,0 +1,55 @@
+# mistral-bridge 编排:接入既有 new-api_default 网络,不接宿主端口
+# newapi 侧加渠道时 base_url 填 http://mistral-bridge:8080/v1
+# 零配置可用:无需 .env、无 key 依赖(Authorization 由下游请求原样透传)。
+name: mistral-bridge
+
+services:
+  # 一次性权限修正容器(root,跑完即退不占资源):
+  # 把 bind mount 的宿主 ./logs 目录 chown 为 bridge 运行的 uid/gid(65532)。
+  # 覆盖边缘:目录不存在 → mkdir -p;权限不对 → chown;旧日志/重启重跑 → chown -R 幂等。
+  bridge-init:
+    image: busybox:1.36
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /logs && chown -R 65532:65532 /logs && echo 'logs dir ready'"]
+    volumes:
+      - ./logs:/logs
+    network_mode: "none"
+    restart: "no"
+
+  bridge:
+    depends_on:
+      bridge-init:
+        condition: service_completed_successfully   # 待 init 容器零退出码后再启动
+    build: .
+    image: mistral-bridge:local
+    container_name: mistral-bridge
+    # 非 root 运行(distroless nonroot 内置用户)
+    user: "65532:65532"
+    # 根文件系统只读:只能写 /tmp(tmpfs)与 /app/logs(bind mount)
+    read_only: true
+    tmpfs:
+      - /tmp                    # tokenizer 资产落盘用 + 运行时临时目录
+    security_opt:
+      - no-new-privileges:true   # 禁止进程提权
+    cap_drop:
+      - ALL                     # 纯网络中转,无需任何 capability
+    volumes:
+      # 日志目录(bind mount 宿主 ./logs,可直接 tail;权限由 bridge-init 预修)
+      - ./logs:/app/logs
+    # 环境变量全部可选(零配置可跑):没有 .env 则全默认值。
+    # 需要时放 .env(已入 .gitignore):
+    #   LISTEN_ADDR / UPSTREAM_BASE / UPSTREAM_TIMEOUT_S / BUILTIN_TOOLS /
+    #   PASS_REASONING / PROXY / SYSTEM_PROXY / LOG_LEVEL / LOG_DIR / LOG_CONSOLE / LOG_FILE
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - new-api_default
+    restart: unless-stopped
+
+networks:
+  # 共享网络语义:若 new-api_default 已由 new-api 栈创建则直接复用;
+  # 若不存在则由本栈自动创建(name 固定,不随项目目录变);
+  # compose down 时不删除非本项目创建的网络(label 保护)。
+  new-api_default:
+    name: new-api_default

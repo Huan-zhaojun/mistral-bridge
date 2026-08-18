@@ -1,0 +1,17 @@
+# 构建上下文排除
+.git/
+.gitignore
+research/
+temp/
+logs/
+*.log
+.mistral-bridge/
+Makefile
+README.md
+docs/
+temp_*
+*.exe
+**/*.bak
+.env
+.env.*
+!.env.example

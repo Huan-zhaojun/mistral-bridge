@@ -1,0 +1,33 @@
+# ── 运行时产物 ──
+logs/
+*.exe
+*.exe~
+
+# ── 临时隔离区(全部不计入 git)──
+tmp/
+temp/
+
+# ── 环境密钥 ──
+.env
+.env.*
+!.env.example
+
+# ── Go 构建产物 ──
+*.test
+*.out
+/coverage.out
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Python 缓存 ──
+__pycache__/
+*.pyc
+*.pyo
+
+# ── OS ──
+Thumbs.db
+.DS_Store
