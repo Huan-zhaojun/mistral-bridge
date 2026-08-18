@@ -1,6 +1,6 @@
 # mistral-bridge
 
-Mistral 平台 glm-5-2 的 OAI Chat Completions 协议转换转发器,Go 单二进制实现(CGO_ENABLED=0,distroless nonroot 容器)。把 `/v1/conversations` 包装成标准 `/v1/chat/completions`,让任意 OpenAI 客户端可直连。**桥不持有 key,不管理任何东西,只做纯粹的格式翻译与修复**。
+Mistral 平台 GLM-5.2 的 OAI Chat Completions 协议转换转发器,Go 单二进制实现(CGO_ENABLED=0,distroless nonroot 容器)。把 `/v1/conversations` 包装成标准 `/v1/chat/completions`,让任意 OpenAI 客户端可直连。**桥不持有 key,不管理任何东西,只做纯粹的格式翻译与修复**。对外模型名标准化为 `glm-5.2`(上游真名 `glm-5-2`、别名 `zai-glm-5-2` 兼容照收,上游请求统一归一)。
 
 ## 为什么需要桥
 
@@ -18,7 +18,7 @@ go run ./cmd/mistral-bridge
 
 curl -X POST http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer $MISTRAL_KEY" -H "Content-Type: application/json" \
-  -d '{"model":"glm-5-2","messages":[{"role":"user","content":"Say OK"}]}'
+  -d '{"model":"glm-5.2","messages":[{"role":"user","content":"Say OK"}]}'
 ```
 
 忘记了:Authorization 头原样透传;无环境依赖可启动。

@@ -3,6 +3,7 @@ package convert
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -199,6 +200,29 @@ func TestC_IgnoredParams(t *testing.T) {
 }
 
 // ---------- D. 直通 ----------
+
+// 模型名标准化:对外官方名 glm-5.2,上游真名 glm-5-2、平台别名 zai-glm-5-2 兼容照收;
+// 上游请求一律归一 glm-5-2,响应回显客户端原值(OriginalModel)。
+func TestD_ModelAlias(t *testing.T) {
+	for _, in := range []string{"glm-5.2", "glm-5-2", "zai-glm-5-2"} {
+		req := mustParse(t, fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hi"}]}`, in))
+		conv, err := ConvertRequest(req, nil, true)
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if conv.Model != "glm-5-2" {
+			t.Errorf("%s normalized to %q", in, conv.Model)
+		}
+		if conv.OriginalModel != in {
+			t.Errorf("%s OriginalModel=%q", in, conv.OriginalModel)
+		}
+		var up map[string]any
+		json.Unmarshal(conv.Body, &up)
+		if up["model"] != "glm-5-2" {
+			t.Errorf("%s upstream model=%v", in, up["model"])
+		}
+	}
+}
 
 func TestD_Passthrough(t *testing.T) {
 	req := mustParse(t, `{"model":"zai-glm-5-2","messages":[{"role":"user","content":"hi"}],

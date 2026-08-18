@@ -39,10 +39,13 @@ type ConvertedRequest struct {
 	InputTextForUsage string   // 转换后 inputs 的原文拼接(tokenizer 兜底计数用)
 }
 
-// ModelAlias 平台登记别名 → 规范 id
+// ModelAlias 客户端可写名 → 上游平台模型 ID。
+// 对外标准化名为 glm-5.2(Z.ai 产品名);glm-5-2 / zai-glm-5-2 为上游平台登记的
+// 真名与别名,兼容照收,上游请求一律归一为 glm-5-2;响应 model 回显客户端入参。
 var modelAlias = map[string]string{
-	"zai-glm-5-2": "glm-5-2",
+	"glm-5.2":     "glm-5-2",
 	"glm-5-2":     "glm-5-2",
+	"zai-glm-5-2": "glm-5-2",
 }
 
 // pooledBuiltinTypes 内置工具类型优先级映射(搜索二选一时 premium 优先)
@@ -66,7 +69,7 @@ func ConvertRequest(req *oai.ChatRequest, cfgListen []string, passReasoning bool
 	// ---- 1. 模型白名单(仅 glm-5-2,接受别名) ----
 	norm, ok := modelAlias[strings.ToLower(strings.TrimSpace(req.Model))]
 	if !ok {
-		return nil, newBridgeError(fmt.Sprintf("unsupported model %q (only glm-5-2 available)", req.Model), "model")
+		return nil, newBridgeError(fmt.Sprintf("unsupported model %q (only glm-5.2 available)", req.Model), "model")
 	}
 	out.Model = norm
 	out.OriginalModel = req.Model

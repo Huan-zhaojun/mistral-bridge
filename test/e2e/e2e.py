@@ -22,7 +22,7 @@ import urllib.error
 
 BASE = os.environ.get("BRIDGE", "http://127.0.0.1:8080")
 KEY = os.environ.get("MISTRAL_KEY", "")
-MODEL = "glm-5-2"
+MODEL = "glm-5.2"
 
 if not KEY:
     print("MISTRAL_KEY env not set", file=sys.stderr)
@@ -158,7 +158,7 @@ def test_models():
     req = urllib.request.Request(BASE + "/v1/models", headers={"Authorization": f"Bearer {KEY}"})
     with urllib.request.urlopen(req, timeout=10) as r:
         j = json.loads(r.read())
-        return j["data"][0]["id"] == "glm-5-2", f"first={j['data'][0]['id']}"
+        return j["data"][0]["id"] == "glm-5.2", f"first={j['data'][0]['id']}"
 
 
 # ============ A. 协议功能 ============

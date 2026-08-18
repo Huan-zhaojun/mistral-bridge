@@ -11,7 +11,7 @@ import urllib.request
 
 BASE = os.environ.get("BRIDGE", "http://127.0.0.1:8080")
 KEY = os.environ.get("MISTRAL_KEY", "")
-MODEL = "glm-5-2"
+MODEL = "glm-5.2"
 MAX_TOKENS = 32000
 
 QUESTIONS = [

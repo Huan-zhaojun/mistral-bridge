@@ -140,6 +140,7 @@ L3 `docker compose up -d --build` + curl 冒烟套件。
 - **[D-29]** 网络自动创建语义(name: 而非 external:),down 不删外部创建 —— **部分勘误,见 D-31**
 - **[D-30]** 测试 max_tokens 预算拉满 32000/64000,防推理截断假 bug —— **生效**
 - **[D-31]** D-29 网络语义修正:compose v2 对同名已存网络做 label 硬校验直接拒启(v2.40.3 `resolveOrCreateNetwork` 源码实证,"自动复用"从未成立);compose ≥v5.4.0(2026-08)官方重构为按名复用仅 WARN。定案:compose.yaml 网络段整体注释(默认纯自足),生产接已建的 new-api_default 时成对取消注释、以 external 引用(桥上 name+auto-create 两种形态都放弃:v2 必炸、v5.4 才活,external 全版本安全);external 下 down 永不触碰该网络 —— **生效**
+- **[D-32]** 模型名对外标准化 `glm-5.2`(Z.ai 产品名):modelAlias 三键全收(标准化名/上游真名 glm-5-2/平台别名 zai-glm-5-2),上游请求统一归一 glm-5-2,响应 model 回显客户端原值;/v1/models 只挂 glm-5.2 + aliases 列双旧名;E2E 全面改用 glm-5.2 实测闭环 —— **生效**
 
 ## 10. 相关索引
 

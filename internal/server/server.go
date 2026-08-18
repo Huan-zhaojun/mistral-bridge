@@ -25,7 +25,7 @@ func New(cfg *config.Config, logger *slog.Logger, chat http.Handler) http.Handle
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// 静态模型白名单:仅 glm-5-2(别名 zai-glm-5-2 归一并列,discovery 友好)
+	// 静态模型白名单:对外标准化名 glm-5.2(上游真名 glm-5-2、别名 zai-glm-5-2 兼容收)
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(modelsJSON)
@@ -43,11 +43,11 @@ var modelsJSON = json.RawMessage(`{
   "object": "list",
   "data": [
     {
-      "id": "glm-5-2",
+      "id": "glm-5.2",
       "object": "model",
       "created": 0,
       "owned_by": "mistral-bridge",
-      "aliases": ["zai-glm-5-2"]
+      "aliases": ["glm-5-2", "zai-glm-5-2"]
     }
   ]
 }`)

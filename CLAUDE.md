@@ -1,6 +1,6 @@
 # mistral-bridge
 
-Mistral 平台 glm-5-2 的 OAI Chat Completions 协议转换转发器(Go 单二进制,纯静态 CGO_ENABLED=0)。
+Mistral 平台 GLM-5.2 的 OAI Chat Completions 协议转换转发器(Go 单二进制,纯静态 CGO_ENABLED=0)。对外模型名 `glm-5.2`(上游真名 glm-5-2/别名 zai-glm-5-2 兼容收,统一归一发上游)。
 仅供 Claude Code 在此项目工作时遵循。**规则/结构定生死；动态实验进展属 git 与测试脚本,不写在这里**。
 
 ---

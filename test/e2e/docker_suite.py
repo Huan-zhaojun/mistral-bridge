@@ -45,14 +45,14 @@ def call(payload, stream=False, timeout=900):
 
 
 def t1_nonstream():
-    st, hdr, chunks, *_ = call({"model":"glm-5-2","messages":[{"role":"user","content":"Say: docker-ok"}],"max_tokens":64000,"reasoning_effort":"high"})
+    st, hdr, chunks, *_ = call({"model":"glm-5.2","messages":[{"role":"user","content":"Say: docker-ok"}],"max_tokens":64000,"reasoning_effort":"high"})
     j = json.loads(b"".join(chunks))
     m = j["choices"][0]["message"]
     ok = st==200 and m.get("content") is not None and (j.get("usage") or {}).get("total_tokens",0)>0
     return ok, f"st={st} content={(m.get('content') or '')[:60]!r} usage={j.get('usage')}"
 
 def t2_stream():
-    st, hdr, chunks, ttfb, total, err = call({"model":"glm-5-2","messages":[{"role":"user","content":"Count 1 to 3"}],"max_tokens":64000,"stream":True}, stream=True)
+    st, hdr, chunks, ttfb, total, err = call({"model":"glm-5.2","messages":[{"role":"user","content":"Count 1 to 3"}],"max_tokens":64000,"stream":True}, stream=True)
     if err or st!=200: return False, f"st={st} err={err}"
     text, tool, finish, usage, done = "", None, None, None, False
     for raw in chunks:
@@ -70,7 +70,7 @@ def t2_stream():
     return ok, f"ttfb={ttfb:.1f}s finish={finish} usage_ok={usage is not None} done={done} text={text[:40]!r}"
 
 def t3_tool_call():
-    st, hdr, chunks, *_ = call({"model":"glm-5-2","messages":[{"role":"user","content":"Weather in Seoul? use get_weather."}],"tools":[{"type":"function","function":{"name":"get_weather","description":"...","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"tool_choice":"auto","max_tokens":64000})
+    st, hdr, chunks, *_ = call({"model":"glm-5.2","messages":[{"role":"user","content":"Weather in Seoul? use get_weather."}],"tools":[{"type":"function","function":{"name":"get_weather","description":"...","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"tool_choice":"auto","max_tokens":64000})
     j = json.loads(b"".join(chunks))
     tc = (j["choices"][0]["message"].get("tool_calls") or [])[0]
     args = json.loads(tc["function"]["arguments"])
@@ -78,7 +78,7 @@ def t3_tool_call():
     return ok, f"st={st} city={args.get('city')} args_ok={args is not None}"
 
 def t4_json_schema():
-    st, hdr, chunks, ttfb, total, err = call({"model":"glm-5-2","messages":[{"role":"user","content":"Person Alice age 30."}],"response_format":{"type":"json_schema","json_schema":{"name":"person","strict":True,"schema":{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name","age"],"additionalProperties":False}}},"max_tokens":64000,"reasoning_effort":"high","stream":True}, stream=True)
+    st, hdr, chunks, ttfb, total, err = call({"model":"glm-5.2","messages":[{"role":"user","content":"Person Alice age 30."}],"response_format":{"type":"json_schema","json_schema":{"name":"person","strict":True,"schema":{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name","age"],"additionalProperties":False}}},"max_tokens":64000,"reasoning_effort":"high","stream":True}, stream=True)
     if err or st!=200: return False, f"st={st} err={err}"
     text, done = "", False
     for raw in chunks:
@@ -98,7 +98,7 @@ def t4_json_schema():
         return False, f"json illegal: {e}, content={text[:200]!r}"
 
 def t5_builtin_premium():
-    st, hdr, chunks, *_ = call({"model":"glm-5-2","messages":[{"role":"user","content":"current date today please."}],"tools":[{"type":"web_search_premium"}],"max_tokens":64000})
+    st, hdr, chunks, *_ = call({"model":"glm-5.2","messages":[{"role":"user","content":"current date today please."}],"tools":[{"type":"web_search_premium"}],"max_tokens":64000})
     j = json.loads(b"".join(chunks))
     m = j["choices"][0]["message"]
     ok = st==200 and bool(m.get("content"))
@@ -106,7 +106,7 @@ def t5_builtin_premium():
 
 def t6_error_401():
     """无 Authorization 头时桥应返回 401 invalid_api_key(不上游到上游)。"""
-    data = json.dumps({"model":"glm-5-2","messages":[{"role":"user","content":"hi"}]}).encode()
+    data = json.dumps({"model":"glm-5.2","messages":[{"role":"user","content":"hi"}]}).encode()
     req = urllib.request.Request(BASE + "/v1/chat/completions", data=data,
                                  headers={"Content-Type": "application/json"}, method="POST")
     try:
@@ -118,7 +118,7 @@ def t6_error_401():
         return ok, f"st={e.code} msg={j['error']['message'][:60]}"
 
 def t7_image_cleaned():
-    st, hdr, chunks, *_ = call({"model":"glm-5-2","messages":[{"role":"user","content":[{"type":"text","text":"what image?"},{"type":"image_url","image_url":{"url":"https://example.com/x.png"}}]}],"max_tokens":64000,"reasoning_effort":"high"})
+    st, hdr, chunks, *_ = call({"model":"glm-5.2","messages":[{"role":"user","content":[{"type":"text","text":"what image?"},{"type":"image_url","image_url":{"url":"https://example.com/x.png"}}]}],"max_tokens":64000,"reasoning_effort":"high"})
     j = json.loads(b"".join(chunks))
     m = j["choices"][0]["message"]
     ok = st==200 and m.get("content")
